@@ -1,6 +1,6 @@
-import { AccountSummary, APIResponse, FuturesCoin, RestClient } from "ftx-api";
-import { GenericAPIResponse } from "ftx-api/lib/util/requestUtils";
+import { AccountSummary, FuturesCoin, RestClient } from "ftx-api";
 import { Subject } from "rxjs";
+import { HistoricalPrice, Market } from "../types/ftx-api-types";
 
 export class StoreController {
   private client = new RestClient(
@@ -13,40 +13,65 @@ export class StoreController {
     }
   );
 
-  public account$ = new Subject<AccountSummary>();
-  public BTCPERP$ = new Subject<APIResponse<FuturesCoin>>();
+  public BTCUSD$ = new Subject<Market>();
+  public BTCUSDHistory = new Array<number>();
 
   constructor() {
-    setInterval(this.getAccount.bind(this), 1000);
-    setInterval(this.getFuture.bind(this), 1000, "BTCPERP", this.BTCPERP$);
+    setInterval(
+      this.getMarket.bind(this),
+      60000,
+      "BTC/USD",
+      this.BTCUSD$,
+      this.BTCUSDHistory
+    );
   }
 
-  private async getAccount(): Promise<GenericAPIResponse> {
-    let account = await this.client.getAccount();
+  private async getAccount(): Promise<AccountSummary | void> {
+    const account = await this.client.getAccount();
 
     if (account.success) {
-      this.account$.next(account.result);
-    } else {
-      account = await this.client.getAccount();
-      if (account.success) {
-        this.account$.next(account.result);
-      }
+      return account.result;
     }
   }
 
-  private async getFuture(
-    name: string,
-    subject: Subject<APIResponse<FuturesCoin>>
-  ) {
-    let future = await this.client.getFuture(name);
+  private async getFuture(name: string): Promise<FuturesCoin | void> {
+    const future = await this.client.getFuture(name);
 
     if (future.success) {
-      subject.next(future.result);
+      return future.result;
+    }
+  }
+
+  private async getMarket(
+    name: string,
+    subject: Subject<Market>,
+    history: Array<number>
+  ): Promise<void> {
+    const market = await this.client.getMarket(name);
+
+    if (market.success) {
+      subject.next(market.result);
+      history.push(market.result.last);
+    }
+  }
+
+  public async getHistoricalMarket(
+    name: string,
+    resolution: number,
+    startTime?: number,
+    endTime?: number
+  ): Promise<HistoricalPrice[]> {
+    const historicalPrices = await this.client.getHistoricalPrices({
+      market_name: name,
+      resolution: resolution,
+      start_time: startTime,
+      end_time: endTime,
+    });
+
+    if (historicalPrices.success) {
+      return historicalPrices.result;
     } else {
-      future = await this.client.getFuture(name);
-      if (future.success) {
-        subject.next(future.result);
-      }
+      return [];
     }
   }
 }
